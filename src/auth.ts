@@ -5,7 +5,11 @@ import { db } from "@/db";
 
 export const authConfig = {
 secret: process.env.AUTH_SECRET,
-providers: [GitHub],
+providers: [
+  GitHub({
+    issuer: "https://github.com/login/oauth",
+  }),
+],
 adapter: DrizzleAdapter(db),
 callbacks: {
 async session({ session, user }) {

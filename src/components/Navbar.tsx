@@ -12,7 +12,11 @@ export default async function Navbar() {
   if (!session) {
     redirect("/api/auth/signin?callbackUrl=/");
   }
-  const { user } = session;
+  const user = session.user;
+
+  if (!user) {
+    redirect("/api/auth/signin?callbackUrl=/");
+  }
   const signOutUser = async () => {
     "use server";
     await signOut({ redirectTo: "/" });

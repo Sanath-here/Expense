@@ -8,11 +8,14 @@ export default function UserProfileModal({
   setModalClosed,
   signOut,
 }: {
-  user: User;
+  user: User | null | undefined;
   isOpen: boolean;
   setModalClosed: () => void;
   signOut: () => Promise<void>;
-}) {
+}){
+  if (!user) {
+    return null;
+  }
   return (
     <div
       className={`fixed z-50 inset-0 overflow-y-auto ${

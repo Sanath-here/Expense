@@ -4,10 +4,10 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { receipts as receiptsTable } from "@/db/schema";
 import { media as mediaTable } from "@/db/schema";
-import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
-
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { rm } from "node:fs/promises";
+import path from "node:path";
 
 export type UpdateReceiptParams = {
   receiptId: number;
@@ -19,14 +19,6 @@ export type UpdateReceiptParams = {
 type UpdateReceiptResult =
   | { success: { receipt: { id: number } } }
   | { failure: string };
-
-const s3Client = new S3Client({
-  region: process.env.BUCKET_REGION!,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
 
 export const updateReceipt = async ({
   receiptId,
@@ -65,27 +57,38 @@ export const updateReceipt = async ({
 
 export const deleteReceipt = async (receiptId: number) => {
   try {
+    const session = await auth();
+    if (!session) return;
+
     const deleteMedia = await db
       .delete(mediaTable)
-      .where(eq(mediaTable.receiptId, receiptId))
+      .where(
+        and(
+          eq(mediaTable.receiptId, receiptId),
+          eq(mediaTable.userId, session.user.id)
+        )
+      )
       .returning()
       .then((res) => res[0]);
 
     await db
       .delete(receiptsTable)
-      .where(eq(receiptsTable.id, receiptId))
+      .where(
+        and(
+          eq(receiptsTable.id, receiptId),
+          eq(receiptsTable.userId, session.user.id)
+        )
+      )
       .returning();
 
-    if (deleteMedia) {
-      const url = deleteMedia.url;
-      const key = url.split("/").slice(-1)[0];
-
-      const deleteParams = {
-        Bucket: process.env.BUCKET_NAME,
-        Key: key,
-      };
-
-      await s3Client.send(new DeleteObjectCommand(deleteParams));
+    const localImage = deleteMedia?.url.match(
+      /^\/api\/receipts\/image\/([\da-f-]{36}\.(?:jpg|png))$/
+    );
+    if (localImage) {
+      await rm(
+        path.join(process.cwd(), "data", "receipts", localImage[1]),
+        { force: true }
+      );
     }
     revalidatePath("/expenses");
   } catch (e) {

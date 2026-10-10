@@ -13,17 +13,17 @@ export const main = async () => {
     max: 1,
   });
 
-  console.log(process.env.MIGRATION_DATABASE_URL!);
-
   try {
     await migrate(drizzle(migrationClient), {
       migrationsFolder: "drizzle",
     });
     console.log("Migration complete");
   } catch (error) {
-    console.log(error);
+    console.error("Migration failed:", error);
+    process.exitCode = 1;
+  } finally {
+    await migrationClient.end();
   }
-  process.exit(0);
 };
 
 main();

@@ -87,6 +87,7 @@ export default function ReceiptContainer({
             src={receipt.media!.url}
             alt="Receipt"
             fill={true}
+            unoptimized
             className="object-cover w-full h-full"
           />
         </Link>

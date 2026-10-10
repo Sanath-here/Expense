@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRef, useState } from "react";
-import { addReceipt, getSignedURL } from "@/app/actions";
+import { addReceipt } from "@/app/actions";
 import { twMerge } from "tailwind-merge";
 import { imageToText, textToObject } from "@/app/image-to-text";
 
@@ -21,37 +21,18 @@ export default function UploadReceiptForm({
     fileInputRef.current?.click();
   };
 
-  const computeSHA256 = async (file: File) => {
-    const bytes = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    const base64String = Buffer.from(bytes).toString("base64");
-    return { checksum: hashHex, base64String };
-  };
-
-  const storeUploadedFile = async (file: File, checksum: string) => {
-    const signedURLResult = await getSignedURL({
-      fileSize: file.size,
-      fileType: file.type,
-      checksum,
+  const storeUploadedFile = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/receipts/upload", {
+      method: "POST",
+      body: formData,
     });
-    if (signedURLResult.failure !== undefined) {
-      throw new Error(signedURLResult.failure);
+    const result = await response.json();
+    if (!response.ok || result.failure || !result.success) {
+      throw new Error(result.failure ?? "Could not save receipt image locally");
     }
-    const { url, fileId } = signedURLResult.success;
-    await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Content-Type": file.type,
-      },
-      body: file,
-    });
-
-    const fileUrl = url.split("?")[0];
-    return { fileUrl, fileId };
+    return result.success as { fileId: number };
   };
 
   const handleError = (errorStatusMessage: string) => {
@@ -66,12 +47,11 @@ export default function UploadReceiptForm({
     try {
       if (!file) {
         setStatusMessage("No file selected");
+        setLoading(false);
         return;
       }
-      setStatusMessage("Uploading receipt...");
-      const { checksum, base64String } = await computeSHA256(file);
       setStatusMessage("Reading data from receipt...");
-      const receiptText = await imageToText(base64String);
+      const receiptText = await imageToText(file);
       if (receiptText.failure) {
         handleError(receiptText.failure);
         return;
@@ -82,8 +62,9 @@ export default function UploadReceiptForm({
         return;
       }
       const receipt = receiptData.success!;
-      setStatusMessage("Adding receipt to database...");
-      const fileStored = await storeUploadedFile(file, checksum);
+      setStatusMessage("Saving receipt image locally...");
+      const fileStored = await storeUploadedFile(file);
+      setStatusMessage("Adding expense...");
       const receiptAddedToDb = await addReceipt({
         fileId: fileStored.fileId,
         receiptDate: receipt.date,
@@ -98,7 +79,11 @@ export default function UploadReceiptForm({
       setFile(null);
     } catch (error) {
       console.error(error);
-      handleError("An error occurred. Please try again.");
+      handleError(
+        error instanceof Error
+          ? error.message
+          : "An error occurred. Please try again."
+      );
     }
   };
 
@@ -158,6 +143,7 @@ export default function UploadReceiptForm({
                     alt="Selected file"
                     width={200}
                     height={200}
+                    className="max-h-48 max-w-full w-auto object-contain"
                   />
                 ) : null}
               </div>
